@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>androlocal bridge test</title>
+  <title>porth bridge test</title>
   <style>
     :root {
       color-scheme: light;
@@ -63,7 +63,7 @@
   </style>
 </head>
 <body>
-  <h1>androlocal bridge test</h1>
+  <h1>porth bridge test</h1>
   <p id="summary">0 / 0 passed</p>
   <table>
     <thead>
@@ -80,7 +80,7 @@
   <script>
     function bridgeGet(key) {
       const result = AndroidBridge.storageGet(key);
-      return result === "__portl_null__" ? null : result;
+      return result === "__porth_null__" ? null : result;
     }
 
     async function runTests() {

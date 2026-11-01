@@ -4,16 +4,16 @@ plugins {
 }
 
 android {
-    namespace = "com.portl.shell"
+    namespace = "com.porth.shell"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.portl.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        applicationId = "com.porth.shell"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10000000
-        versionName = "PORTL_VERSION_NAME_PLACEHOLDER_A"
-        buildConfigField("boolean", "PORTL_WEBVIEW_DEBUG", "false")
+        versionCode = 1
+        versionName = "0.0.0"
+        buildConfigField("boolean", "PORTH_WEBVIEW_DEBUG", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

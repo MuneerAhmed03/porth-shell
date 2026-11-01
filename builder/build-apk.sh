@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INPUT_DIR="${PORTL_INPUT_DIR:-/work/input}"
-OUTPUT_DIR="${PORTL_OUTPUT_DIR:-/work/output}"
-METADATA_PATH="${PORTL_METADATA_PATH:-${INPUT_DIR}/portl-build.json}"
-WEB_DIST_DIR="${PORTL_WEB_DIST_DIR:-${INPUT_DIR}/dist}"
-SHELL_TEMPLATE_DIR="/opt/portl/portl-shell"
-NORMALIZER_SCRIPT="/opt/portl/portl-shell/builder/normalize-web-assets.py"
+INPUT_DIR="${PORTH_INPUT_DIR:-/work/input}"
+OUTPUT_DIR="${PORTH_OUTPUT_DIR:-/work/output}"
+METADATA_PATH="${PORTH_METADATA_PATH:-${INPUT_DIR}/porth-build.json}"
+WEB_DIST_DIR="${PORTH_WEB_DIST_DIR:-${INPUT_DIR}/dist}"
+SHELL_TEMPLATE_DIR="/opt/porth/porth-shell"
+NORMALIZER_SCRIPT="/opt/porth/porth-shell/builder/normalize-web-assets.py"
 
 err() {
-  echo "portl-builder: $*" >&2
+  echo "porth-builder: $*" >&2
   exit 1
 }
 
@@ -108,9 +108,9 @@ main() {
   require_file "$keystore_path"
 
   local build_root shell_dir
-  build_root="$(mktemp -d /tmp/portl-shell-build.XXXXXX)"
+  build_root="$(mktemp -d /tmp/porth-shell-build.XXXXXX)"
   trap 'if [ -n "${build_root:-}" ]; then rm -rf "$build_root"; fi' EXIT
-  shell_dir="${build_root}/portl-shell"
+  shell_dir="${build_root}/porth-shell"
   cp -R "${SHELL_TEMPLATE_DIR}" "$shell_dir"
 
   local app_build_file app_manifest_file strings_file
@@ -126,7 +126,7 @@ main() {
     -e "s|^\\([[:space:]]*applicationId = \\).*|\\1\"${package_name}\"|" \
     -e "s|^\\([[:space:]]*versionCode = \\).*|\\1${version_code}|" \
     -e "s|^\\([[:space:]]*versionName = \\).*|\\1\"${version_name}\"|" \
-    -e "s|^[[:space:]]*buildConfigField(\"boolean\", \"PORTL_WEBVIEW_DEBUG\", \".*\")|        buildConfigField(\"boolean\", \"PORTL_WEBVIEW_DEBUG\", \"${webview_debug}\")|" \
+    -e "s|^[[:space:]]*buildConfigField(\"boolean\", \"PORTH_WEBVIEW_DEBUG\", \".*\")|        buildConfigField(\"boolean\", \"PORTH_WEBVIEW_DEBUG\", \"${webview_debug}\")|" \
     "$app_build_file"
 
   sed -i \
@@ -153,15 +153,15 @@ EOF
   cp -R "${normalized_dist_dir}/." "${shell_dir}/app/src/main/assets/www/"
   if [[ -n "$dev_url" ]]; then
     jq -n --arg devUrl "$dev_url" '{ devUrl: $devUrl }' \
-      > "${shell_dir}/app/src/main/assets/www/portl-config.json"
+      > "${shell_dir}/app/src/main/assets/www/porth-config.json"
   fi
 
   printf "sdk.dir=%s\n" "${ANDROID_SDK_ROOT}" > "${shell_dir}/local.properties"
 
   (
     cd "$shell_dir"
-    ./gradlew --no-daemon clean :app:assembleRelease >/tmp/portl-gradle-build.log 2>&1 || {
-      cat /tmp/portl-gradle-build.log >&2
+    ./gradlew --no-daemon clean :app:assembleRelease >/tmp/porth-gradle-build.log 2>&1 || {
+      cat /tmp/porth-gradle-build.log >&2
       err "Gradle build failed."
     }
   )
@@ -223,7 +223,7 @@ EOF
       }
     }' > "${OUTPUT_DIR}/build-report.json"
 
-  echo "portl-builder: APK ready at ${final_apk}"
+  echo "porth-builder: APK ready at ${final_apk}"
 }
 
 main "$@"

@@ -1,4 +1,4 @@
-package com.portl.shell
+package com.porth.shell
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         supportActionBar?.hide()
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG || BuildConfig.PORTL_WEBVIEW_DEBUG)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG || BuildConfig.PORTH_WEBVIEW_DEBUG)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun resolveStartUrl(): String {
         return try {
-            val configJson = assets.open("www/portl-config.json")
+            val configJson = assets.open("www/porth-config.json")
                 .bufferedReader()
                 .use { it.readText() }
             val json = JSONObject(configJson)

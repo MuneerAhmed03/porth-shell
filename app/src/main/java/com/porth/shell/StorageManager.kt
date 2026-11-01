@@ -1,4 +1,4 @@
-package com.portl.shell
+package com.porth.shell
 
 import android.content.Context
 import org.json.JSONArray
@@ -118,7 +118,7 @@ class StorageManager(context: Context) {
     }
 
     private companion object {
-        const val STORAGE_NAMESPACE = "androlocal_storage"
+        const val STORAGE_NAMESPACE = "porth_storage"
         const val FILE_SENTINEL_PREFIX = "__file__:"
         const val INLINE_VALUE_THRESHOLD_BYTES = 4096
     }

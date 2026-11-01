@@ -167,7 +167,7 @@ def main() -> int:
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     if report["status"] != "ok":
-        print("portl-builder: web asset normalization failed", flush=True)
+        print("porth-builder: web asset normalization failed", flush=True)
         if report["unresolvedRefs"]:
             print(json.dumps({"unresolvedRefs": report["unresolvedRefs"]}, indent=2), flush=True)
         if report["missingRefs"]:

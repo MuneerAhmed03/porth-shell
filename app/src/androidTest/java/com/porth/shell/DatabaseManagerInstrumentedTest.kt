@@ -1,4 +1,4 @@
-package com.portl.shell
+package com.porth.shell
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,7 +18,7 @@ class DatabaseManagerInstrumentedTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        context.deleteDatabase("androlocal.db")
+        context.deleteDatabase("porth.db")
         manager = DatabaseManager(context)
         manager.query(
             """
@@ -38,7 +38,7 @@ class DatabaseManagerInstrumentedTest {
     @After
     fun tearDown() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        context.deleteDatabase("androlocal.db")
+        context.deleteDatabase("porth.db")
     }
 
     @Test

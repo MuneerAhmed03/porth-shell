@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "portl"
+rootProject.name = "porth"
 include(":app")

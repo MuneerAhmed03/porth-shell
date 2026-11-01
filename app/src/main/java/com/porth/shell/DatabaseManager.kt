@@ -1,4 +1,4 @@
-package com.portl.shell
+package com.porth.shell
 
 import android.content.Context
 import android.database.Cursor
@@ -22,7 +22,7 @@ class DatabaseManager(context: Context) {
         data class BoolValue(val value: Boolean) : SqlParam()
     }
 
-    private val helper = object : SQLiteOpenHelper(context, "androlocal.db", null, 1) {
+    private val helper = object : SQLiteOpenHelper(context, "porth.db", null, 1) {
         override fun onCreate(db: SQLiteDatabase) {
 
         }

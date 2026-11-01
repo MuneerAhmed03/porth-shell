@@ -1,4 +1,4 @@
-package com.portl.shell
+package com.porth.shell
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.portl.shell", appContext.packageName)
+        assertEquals("com.porth.shell", appContext.packageName)
     }
 }

@@ -180,7 +180,9 @@ EOF
     "$aligned_apk"
 
   apksigner verify --verbose "$final_apk"
-  aapt dump badging "$final_apk" | grep -q "package: name='${package_name}'" \
+  local badging
+  badging="$(aapt dump badging "$final_apk" 2>&1 || true)"
+  grep -q "package: name='${package_name}'" <<< "$badging" \
     || err "Final APK package name does not match expected packageName."
 
   jq -n \

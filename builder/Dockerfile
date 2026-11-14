@@ -62,8 +62,7 @@ COPY . /opt/porth/porth-shell/
 # Point Gradle/AGP to the SDK path inside the image.
 RUN printf "sdk.dir=%s\n" "${ANDROID_SDK_ROOT}" > /opt/porth/porth-shell/local.properties \
     && chmod +x /opt/porth/porth-shell/gradlew \
-        /opt/porth/porth-shell/builder/build-apk.sh \
-        /opt/porth/porth-shell/builder/normalize-web-assets.py
+        /opt/porth/porth-shell/builder/build-apk.sh
 
 RUN chown -R porth:porth /opt/porth /work /home/porth
 

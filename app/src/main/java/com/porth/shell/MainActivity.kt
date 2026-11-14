@@ -1,10 +1,19 @@
 package com.porth.shell
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
+import android.webkit.JsResult
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -13,6 +22,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -24,6 +34,29 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var splashView: View
+    private var devUrl: String? = null
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val callback = filePathCallback
+        filePathCallback = null
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val uris = when {
+                data?.clipData != null -> {
+                    val count = data.clipData!!.itemCount
+                    Array(count) { i -> data.clipData!!.getItemAt(i).uri }
+                }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> emptyArray()
+            }
+            callback?.onReceiveValue(uris)
+        } else {
+            callback?.onReceiveValue(null)
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,7 +109,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
         webView.webViewClient = object : WebViewClient() {
@@ -84,7 +117,36 @@ class MainActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                return assetLoader.shouldInterceptRequest(request.url)
+                if (request.url.host != ASSET_HOST) {
+                    // Dev server or external origin: let the network stack handle it.
+                    return null
+                }
+                assetLoader.shouldInterceptRequest(request.url)?.let { return it }
+
+                // SPA fallback: serve index.html for main-frame navigations to
+                // extension-less paths (e.g. /settings on reload or deep link).
+                if (request.isForMainFrame &&
+                    !request.url.path.orEmpty().substringAfterLast('/').contains('.')
+                ) {
+                    return assetLoader.shouldInterceptRequest(Uri.parse(ASSET_LOADER_INDEX_URL))
+                }
+                return null
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+                val url = request.url
+                if (isAllowedNavigation(url)) {
+                    return false
+                }
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, url))
+                } catch (_: Exception) {
+                    // No handler on device; ignore.
+                }
+                return true
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -116,6 +178,61 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onJsAlert(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> result?.cancel() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                if (BuildConfig.DEBUG || BuildConfig.PORTH_WEBVIEW_DEBUG) {
+                    Log.d("PorthWeb", consoleMessage?.message() ?: "")
+                }
+                return true
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: FileChooserParams
+            ): Boolean {
+                this@MainActivity.filePathCallback?.onReceiveValue(null)
+                this@MainActivity.filePathCallback = filePathCallback
+                return try {
+                    fileChooserLauncher.launch(fileChooserParams.createIntent())
+                    true
+                } catch (_: Exception) {
+                    this@MainActivity.filePathCallback = null
+                    filePathCallback.onReceiveValue(null)
+                    false
+                }
+            }
+        }
+
         val root = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -128,7 +245,6 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-
                 if (webView.canGoBack()) {
                     webView.goBack()
                 } else {
@@ -145,6 +261,21 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         webView.destroy()
         super.onDestroy()
+    }
+
+    private fun isAllowedNavigation(url: Uri): Boolean {
+        val host = url.host ?: return false
+        if (host == ASSET_HOST) {
+            return true
+        }
+        val dev = devUrl
+        if (dev != null) {
+            val devHost = Uri.parse(dev).host
+            if (devHost == host) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun showInlineError(message: String) {
@@ -171,13 +302,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun resolveStartUrl(): String {
         return try {
-            val configJson = assets.open("www/porth-config.json")
+            val configJson = assets.open("porth-config.json")
                 .bufferedReader()
                 .use { it.readText() }
             val json = JSONObject(configJson)
-            val devUrl = json.optString("devUrl", "")
-            if (devUrl.isNotBlank()) {
-                devUrl
+            val configuredDevUrl = json.optString("devUrl", "")
+            if (configuredDevUrl.isNotBlank()) {
+                devUrl = configuredDevUrl
+                configuredDevUrl
             } else {
                 ASSET_LOADER_INDEX_URL
             }
@@ -187,6 +319,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val ASSET_LOADER_INDEX_URL = "https://appassets.androidplatform.net/assets/www/index.html"
+        const val ASSET_HOST = "appassets.androidplatform.net"
+        const val ASSET_LOADER_INDEX_URL = "https://appassets.androidplatform.net/index.html"
     }
 }

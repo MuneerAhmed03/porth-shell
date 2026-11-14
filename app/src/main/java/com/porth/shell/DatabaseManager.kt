@@ -180,7 +180,7 @@ class DatabaseManager(context: Context) {
         params: List<SqlParam>
     ): Cursor {
         return db.rawQueryWithFactory(
-            { _: SQLiteDatabase, driver: SQLiteCursorDriver, editTable: String, query: SQLiteQuery ->
+            { _: SQLiteDatabase, driver: SQLiteCursorDriver, editTable: String?, query: SQLiteQuery ->
                 bindQueryParams(query, params)
                 SQLiteCursor(driver, editTable, query)
             },

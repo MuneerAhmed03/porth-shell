@@ -59,6 +59,18 @@ xml_escape() {
   printf '%s' "$value"
 }
 
+verify_package_name() {
+  local final_apk="$1"
+  local package_name="$2"
+  local badging
+  if ! badging="$(aapt dump badging "$final_apk" 2>&1)"; then
+    printf '%s\n' "$badging" >&2
+    err "aapt dump badging failed."
+  fi
+  grep -q "package: name='${package_name}'" <<< "$badging" \
+    || err "Final APK package name does not match expected packageName."
+}
+
 main() {
   require_cmd jq
   require_cmd zipalign
@@ -180,10 +192,7 @@ EOF
     "$aligned_apk"
 
   apksigner verify --verbose "$final_apk"
-  local badging
-  badging="$(aapt dump badging "$final_apk" 2>&1 || true)"
-  grep -q "package: name='${package_name}'" <<< "$badging" \
-    || err "Final APK package name does not match expected packageName."
+  verify_package_name "$final_apk" "$package_name"
 
   jq -n \
     --arg status "ok" \
@@ -210,4 +219,6 @@ EOF
   echo "porth-builder: APK ready at ${final_apk}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

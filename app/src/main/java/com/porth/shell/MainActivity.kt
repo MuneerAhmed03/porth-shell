@@ -1,7 +1,6 @@
 package com.porth.shell
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
@@ -34,28 +33,15 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var splashView: View
-    private var devUrl: String? = null
+    private var devUri: Uri? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val callback = filePathCallback
-        filePathCallback = null
-        if (result.resultCode == Activity.RESULT_OK) {
-            val data = result.data
-            val uris = when {
-                data?.clipData != null -> {
-                    val count = data.clipData!!.itemCount
-                    Array(count) { i -> data.clipData!!.getItemAt(i).uri }
-                }
-                data?.data != null -> arrayOf(data.data!!)
-                else -> emptyArray()
-            }
-            callback?.onReceiveValue(uris)
-        } else {
-            callback?.onReceiveValue(null)
-        }
+        finishFileChooser(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+        )
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -123,11 +109,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 assetLoader.shouldInterceptRequest(request.url)?.let { return it }
 
-                // SPA fallback: serve index.html for main-frame navigations to
-                // extension-less paths (e.g. /settings on reload or deep link).
-                if (request.isForMainFrame &&
-                    !request.url.path.orEmpty().substringAfterLast('/').contains('.')
-                ) {
+                // SPA fallback: serve index.html for any main-frame navigation
+                // that isn't an existing asset (e.g. /settings or /users/jane.doe
+                // on reload or deep link). Subresources are never main-frame, so
+                // they still 404 normally.
+                if (request.isForMainFrame) {
                     return assetLoader.shouldInterceptRequest(Uri.parse(ASSET_LOADER_INDEX_URL))
                 }
                 return null
@@ -220,20 +206,18 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                this@MainActivity.filePathCallback?.onReceiveValue(null)
+                finishFileChooser(null) // cancel any pending picker
                 this@MainActivity.filePathCallback = filePathCallback
                 val intent = fileChooserParams.createIntent()
                 if (intent == null) {
-                    this@MainActivity.filePathCallback = null
-                    filePathCallback.onReceiveValue(null)
+                    finishFileChooser(null)
                     return false
                 }
                 return try {
                     fileChooserLauncher.launch(intent)
                     true
                 } catch (_: Exception) {
-                    this@MainActivity.filePathCallback = null
-                    filePathCallback.onReceiveValue(null)
+                    finishFileChooser(null)
                     false
                 }
             }
@@ -265,23 +249,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        finishFileChooser(null)
         webView.destroy()
         super.onDestroy()
     }
 
+    private fun finishFileChooser(uris: Array<Uri>?) {
+        val callback = filePathCallback
+        filePathCallback = null
+        callback?.onReceiveValue(uris)
+    }
+
     private fun isAllowedNavigation(url: Uri): Boolean {
-        val host = url.host ?: return false
-        if (host == ASSET_HOST) {
+        if (url.scheme == "https" && url.host == ASSET_HOST) {
             return true
         }
-        val dev = devUrl
-        if (dev != null) {
-            val devHost = Uri.parse(dev).host
-            if (devHost == host) {
-                return true
-            }
+        val dev = devUri ?: return false
+        return url.scheme == dev.scheme &&
+            url.host == dev.host &&
+            effectivePort(url) == effectivePort(dev)
+    }
+
+    private fun effectivePort(url: Uri): Int {
+        val port = url.port
+        if (port != -1) return port
+        return when (url.scheme) {
+            "https" -> 443
+            "http" -> 80
+            else -> -1
         }
-        return false
     }
 
     private fun showInlineError(message: String) {
@@ -314,7 +310,7 @@ class MainActivity : AppCompatActivity() {
             val json = JSONObject(configJson)
             val configuredDevUrl = json.optString("devUrl", "")
             if (configuredDevUrl.isNotBlank()) {
-                devUrl = configuredDevUrl
+                devUri = Uri.parse(configuredDevUrl)
                 configuredDevUrl
             } else {
                 ASSET_LOADER_INDEX_URL

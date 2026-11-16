@@ -12,11 +12,6 @@ import android.webkit.WebView
 import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AppCompatActivity
 
-/**
- * Dialogs, console forwarding, and file selection for the shell WebView.
- * Owns the single pending file-chooser callback; completion always goes
- * through [finishFileChooser] so no path can leave it dangling.
- */
 internal class ShellWebChromeClient(
     private val activity: AppCompatActivity,
     private val fileChooserLauncher: ActivityResultLauncher<Intent>,
@@ -26,7 +21,6 @@ internal class ShellWebChromeClient(
     var filePathCallback: ValueCallback<Array<Uri>>? = null
         private set
 
-    /** Atomically takes and clears the pending callback, then completes it. */
     fun finishFileChooser(uris: Array<Uri>?) {
         val callback = filePathCallback
         filePathCallback = null
@@ -74,7 +68,7 @@ internal class ShellWebChromeClient(
         filePathCallback: ValueCallback<Array<Uri>>,
         fileChooserParams: FileChooserParams,
     ): Boolean {
-        finishFileChooser(null) // cancel any pending picker
+        finishFileChooser(null)
         this.filePathCallback = filePathCallback
         val intent = fileChooserParams.createIntent()
         if (intent == null) {

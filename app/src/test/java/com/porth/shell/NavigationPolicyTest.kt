@@ -5,15 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pure JVM tests for the shell's navigation rules: the origin matrix and
- * the SPA fallback (including dotted client-side routes).
- */
 class NavigationPolicyTest {
 
     private val dev = NavigationPolicy("http://192.168.1.2:5173")
-
-    // --- asset origin ---
 
     @Test
     fun assetOriginOverHttpsIsAllowed() {
@@ -33,8 +27,6 @@ class NavigationPolicyTest {
     fun unrelatedHostIsDenied() {
         assertFalse(dev.isAllowedNavigation(URI("https://example.com/")))
     }
-
-    // --- dev origin matrix ---
 
     @Test
     fun devOriginExactMatchIsAllowed() {
@@ -62,8 +54,6 @@ class NavigationPolicyTest {
         assertFalse(policy.isAllowedNavigation(URI("http://192.168.1.2:5173/")))
         assertTrue(policy.isAllowedNavigation(URI("https://appassets.androidplatform.net/")))
     }
-
-    // --- SPA fallback ---
 
     @Test
     fun mainFrameDottedRouteServesSpaFallback() {
@@ -109,7 +99,6 @@ class NavigationPolicyTest {
 
     @Test
     fun devOriginMainFrameDoesNotServeSpaFallback() {
-        // The Vite dev server performs its own SPA fallback.
         assertFalse(
             dev.shouldServeSpaFallback(
                 URI("http://192.168.1.2:5173/settings"),

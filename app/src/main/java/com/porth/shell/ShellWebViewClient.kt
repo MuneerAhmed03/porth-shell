@@ -10,11 +10,6 @@ import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
 import java.net.URI
 
-/**
- * Resource interception and navigation for the shell WebView. All policy
- * decisions delegate to [NavigationPolicy]; the Activity supplies only
- * callbacks for the pieces that touch views or the system.
- */
 internal class ShellWebViewClient(
     private val assetLoader: WebViewAssetLoader,
     private val policy: NavigationPolicy,
@@ -30,11 +25,6 @@ internal class ShellWebViewClient(
     ): WebResourceResponse? {
         val uri = request.url.toJavaUri() ?: return null
         assetLoader.shouldInterceptRequest(request.url)?.let { return it }
-
-        // SPA fallback: serve index.html for any main-frame navigation that
-        // isn't an existing asset (e.g. /settings or /users/jane.doe on
-        // reload or deep link). Subresources are never main-frame, so they
-        // still 404 normally.
         if (policy.shouldServeSpaFallback(uri, request.isForMainFrame)) {
             return assetLoader.shouldInterceptRequest(INDEX_URI)
         }

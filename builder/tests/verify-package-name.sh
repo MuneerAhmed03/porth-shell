@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tests for build-apk.sh's verify_package_name: an aapt failure or a
-# package-name mismatch must fail the build, even when aapt prints the
-# expected package line before exiting nonzero.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +9,6 @@ trap 'rm -rf "$TMP"' EXIT
 
 echo "fakeapk" > "$TMP/app.apk"
 
-# Source build-apk.sh to get its functions (main is guarded by BASH_SOURCE).
-# shellcheck disable=SC1091
 source "$BUILD_SCRIPT"
 
 run_check() {

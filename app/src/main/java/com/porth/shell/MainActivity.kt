@@ -19,11 +19,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
 
-/**
- * The shell's single activity: wires the WebView to the bridge, asset
- * loader, and extracted WebViewClient/WebChromeClient implementations.
- * Navigation policy lives in [NavigationPolicy].
- */
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var splashView: View
@@ -101,7 +96,6 @@ class MainActivity : AppCompatActivity() {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, url))
                 } catch (_: Exception) {
-                    // No handler on device; ignore.
                 }
             },
             onPageStarted = { splashView.visibility = View.VISIBLE },

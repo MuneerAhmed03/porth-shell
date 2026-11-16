@@ -1,18 +1,16 @@
 package com.porth.shell
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -24,6 +22,15 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var splashView: View
+    private lateinit var webChromeClient: ShellWebChromeClient
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        webChromeClient.finishFileChooser(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+        )
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,7 +47,7 @@ class MainActivity : AppCompatActivity() {
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
             )
             settings.apply {
                 javaScriptEnabled = true
@@ -61,7 +68,7 @@ class MainActivity : AppCompatActivity() {
         splashView = View(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
             )
             setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.white))
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.splash_background)
@@ -69,57 +76,43 @@ class MainActivity : AppCompatActivity() {
 
         val storageManager = StorageManager(applicationContext)
         val databaseManager = DatabaseManager(applicationContext)
-
         webView.addJavascriptInterface(
             AndroidBridge(storageManager, databaseManager),
-            "AndroidBridge"
+            "AndroidBridge",
         )
 
+        val devUrl = resolveDevUrl()
+        val policy = NavigationPolicy(devUrl)
+
         val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(
-                view: WebView,
-                request: WebResourceRequest
-            ): WebResourceResponse? {
-                return assetLoader.shouldInterceptRequest(request.url)
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                splashView.visibility = View.VISIBLE
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                splashView.visibility = View.GONE
-            }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
-                if (request.isForMainFrame) {
-                    showInlineError(error.description?.toString() ?: "Unknown loading error")
+        webView.webViewClient = ShellWebViewClient(
+            assetLoader = assetLoader,
+            policy = policy,
+            openExternal = { url ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, url))
+                } catch (_: Exception) {
                 }
-            }
+            },
+            onPageStarted = { splashView.visibility = View.VISIBLE },
+            onPageFinished = { splashView.visibility = View.GONE },
+            onMainFrameError = { message -> showInlineError(message) },
+        )
 
-            @Suppress("DEPRECATION")
-            override fun onReceivedError(
-                view: WebView,
-                errorCode: Int,
-                description: String?,
-                failingUrl: String?
-            ) {
-                showInlineError(description ?: "Unknown loading error")
-            }
-        }
+        webChromeClient = ShellWebChromeClient(
+            dialogContext = this,
+            fileChooserLauncher = fileChooserLauncher,
+            debugLogging = BuildConfig.DEBUG || BuildConfig.PORTH_WEBVIEW_DEBUG,
+        )
+        webView.webChromeClient = webChromeClient
 
         val root = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
             )
             addView(webView)
             addView(splashView)
@@ -128,7 +121,6 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-
                 if (webView.canGoBack()) {
                     webView.goBack()
                 } else {
@@ -138,12 +130,16 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        val startUrl = resolveStartUrl()
-        webView.loadUrl(startUrl)
+        webView.loadUrl(devUrl ?: ShellUrls.INDEX_URL)
     }
 
     override fun onDestroy() {
-        webView.destroy()
+        if (::webChromeClient.isInitialized) {
+            webChromeClient.finishFileChooser(null)
+        }
+        if (::webView.isInitialized) {
+            webView.destroy()
+        }
         super.onDestroy()
     }
 
@@ -169,24 +165,14 @@ class MainActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
     }
 
-    private fun resolveStartUrl(): String {
+    private fun resolveDevUrl(): String? {
         return try {
-            val configJson = assets.open("www/porth-config.json")
+            val configJson = assets.open("porth-config.json")
                 .bufferedReader()
                 .use { it.readText() }
-            val json = JSONObject(configJson)
-            val devUrl = json.optString("devUrl", "")
-            if (devUrl.isNotBlank()) {
-                devUrl
-            } else {
-                ASSET_LOADER_INDEX_URL
-            }
+            JSONObject(configJson).optString("devUrl", "").takeIf { it.isNotBlank() }
         } catch (_: Exception) {
-            ASSET_LOADER_INDEX_URL
+            null
         }
-    }
-
-    private companion object {
-        const val ASSET_LOADER_INDEX_URL = "https://appassets.androidplatform.net/assets/www/index.html"
     }
 }

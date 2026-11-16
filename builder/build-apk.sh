@@ -5,8 +5,7 @@ INPUT_DIR="${PORTH_INPUT_DIR:-/work/input}"
 OUTPUT_DIR="${PORTH_OUTPUT_DIR:-/work/output}"
 METADATA_PATH="${PORTH_METADATA_PATH:-${INPUT_DIR}/porth-build.json}"
 WEB_DIST_DIR="${PORTH_WEB_DIST_DIR:-${INPUT_DIR}/dist}"
-SHELL_TEMPLATE_DIR="/opt/porth/porth-shell"
-NORMALIZER_SCRIPT="/opt/porth/porth-shell/builder/normalize-web-assets.py"
+SHELL_TEMPLATE_DIR="${PORTH_SHELL_TEMPLATE_DIR:-/opt/porth/porth-shell}"
 
 err() {
   echo "porth-builder: $*" >&2
@@ -60,9 +59,20 @@ xml_escape() {
   printf '%s' "$value"
 }
 
+verify_package_name() {
+  local final_apk="$1"
+  local package_name="$2"
+  local badging
+  if ! badging="$(aapt dump badging "$final_apk" 2>&1)"; then
+    printf '%s\n' "$badging" >&2
+    err "aapt dump badging failed."
+  fi
+  grep -q "package: name='${package_name}'" <<< "$badging" \
+    || err "Final APK package name does not match expected packageName."
+}
+
 main() {
   require_cmd jq
-  require_cmd python3
   require_cmd zipalign
   require_cmd apksigner
   require_cmd aapt
@@ -70,7 +80,6 @@ main() {
   require_file "$METADATA_PATH"
   require_dir "$WEB_DIST_DIR"
   require_dir "$SHELL_TEMPLATE_DIR"
-  require_file "$NORMALIZER_SCRIPT"
 
   mkdir -p "$OUTPUT_DIR"
   rm -f "$OUTPUT_DIR/app.apk" "$OUTPUT_DIR/app-aligned.apk" "$OUTPUT_DIR/app-release-unsigned.apk" "$OUTPUT_DIR/build-report.json"
@@ -139,21 +148,12 @@ main() {
 </resources>
 EOF
 
-  local normalized_dist_dir normalize_report_path
-  normalized_dist_dir="${build_root}/normalized-dist"
-  normalize_report_path="${build_root}/normalize-report.json"
-  mkdir -p "$normalized_dist_dir"
-  cp -R "${WEB_DIST_DIR}/." "$normalized_dist_dir/"
-  python3 "$NORMALIZER_SCRIPT" \
-    --dist-dir "$normalized_dist_dir" \
-    --report-path "$normalize_report_path" || err "Web asset normalization failed."
-
-  mkdir -p "${shell_dir}/app/src/main/assets/www"
-  find "${shell_dir}/app/src/main/assets/www" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-  cp -R "${normalized_dist_dir}/." "${shell_dir}/app/src/main/assets/www/"
+  mkdir -p "${shell_dir}/app/src/main/assets"
+  find "${shell_dir}/app/src/main/assets" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cp -R "${WEB_DIST_DIR}/." "${shell_dir}/app/src/main/assets/"
   if [[ -n "$dev_url" ]]; then
     jq -n --arg devUrl "$dev_url" '{ devUrl: $devUrl }' \
-      > "${shell_dir}/app/src/main/assets/www/porth-config.json"
+      > "${shell_dir}/app/src/main/assets/porth-config.json"
   fi
 
   printf "sdk.dir=%s\n" "${ANDROID_SDK_ROOT}" > "${shell_dir}/local.properties"
@@ -192,8 +192,7 @@ EOF
     "$aligned_apk"
 
   apksigner verify --verbose "$final_apk"
-  aapt dump badging "$final_apk" | grep -q "package: name='${package_name}'" \
-    || err "Final APK package name does not match expected packageName."
+  verify_package_name "$final_apk" "$package_name"
 
   jq -n \
     --arg status "ok" \
@@ -205,8 +204,6 @@ EOF
     --arg versionName "${version_name}" \
     --argjson webViewDebug "${webview_debug}" \
     --arg devUrl "${dev_url}" \
-    --argjson rewrittenRefs "$(jq -r '.rewrittenRefs // 0' "$normalize_report_path")" \
-    --argjson filesTouched "$(jq -r '.filesTouched // 0' "$normalize_report_path")" \
     '{
       status: $status,
       apkPath: $apkPath,
@@ -216,14 +213,12 @@ EOF
       versionCode: $versionCode,
       versionName: $versionName,
       webViewDebug: $webViewDebug,
-      devUrl: (if $devUrl == "" then null else $devUrl end),
-      normalization: {
-        rewrittenRefs: $rewrittenRefs,
-        filesTouched: $filesTouched
-      }
+      devUrl: (if $devUrl == "" then null else $devUrl end)
     }' > "${OUTPUT_DIR}/build-report.json"
 
   echo "porth-builder: APK ready at ${final_apk}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

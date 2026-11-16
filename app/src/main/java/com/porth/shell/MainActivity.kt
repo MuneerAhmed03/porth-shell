@@ -23,7 +23,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var splashView: View
     private lateinit var webChromeClient: ShellWebChromeClient
-    private var devUrl: String? = null
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -82,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             "AndroidBridge",
         )
 
-        val startUrl = resolveStartUrl()
+        val devUrl = resolveDevUrl()
         val policy = NavigationPolicy(devUrl)
 
         val assetLoader = WebViewAssetLoader.Builder()
@@ -104,7 +103,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         webChromeClient = ShellWebChromeClient(
-            activity = this,
+            dialogContext = this,
             fileChooserLauncher = fileChooserLauncher,
             debugLogging = BuildConfig.DEBUG || BuildConfig.PORTH_WEBVIEW_DEBUG,
         )
@@ -131,7 +130,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        webView.loadUrl(startUrl)
+        webView.loadUrl(devUrl ?: ShellUrls.INDEX_URL)
     }
 
     override fun onDestroy() {
@@ -166,25 +165,14 @@ class MainActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
     }
 
-    private fun resolveStartUrl(): String {
+    private fun resolveDevUrl(): String? {
         return try {
             val configJson = assets.open("porth-config.json")
                 .bufferedReader()
                 .use { it.readText() }
-            val json = JSONObject(configJson)
-            val configuredDevUrl = json.optString("devUrl", "")
-            if (configuredDevUrl.isNotBlank()) {
-                devUrl = configuredDevUrl
-                configuredDevUrl
-            } else {
-                ASSET_LOADER_INDEX_URL
-            }
+            JSONObject(configJson).optString("devUrl", "").takeIf { it.isNotBlank() }
         } catch (_: Exception) {
-            ASSET_LOADER_INDEX_URL
+            null
         }
-    }
-
-    private companion object {
-        const val ASSET_LOADER_INDEX_URL = "https://appassets.androidplatform.net/index.html"
     }
 }

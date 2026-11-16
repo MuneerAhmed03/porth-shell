@@ -70,6 +70,6 @@ internal class ShellWebViewClient(
     private fun Uri.toJavaUri(): URI? = runCatching { URI(toString()) }.getOrNull()
 
     private companion object {
-        val INDEX_URI: Uri = Uri.parse("https://appassets.androidplatform.net/index.html")
+        val INDEX_URI: Uri = Uri.parse(ShellUrls.INDEX_URL)
     }
 }

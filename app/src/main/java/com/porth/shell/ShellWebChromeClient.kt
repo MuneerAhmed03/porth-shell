@@ -1,6 +1,7 @@
 package com.porth.shell
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -10,10 +11,9 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.activity.result.ActivityResultLauncher
-import androidx.appcompat.app.AppCompatActivity
 
 internal class ShellWebChromeClient(
-    private val activity: AppCompatActivity,
+    private val dialogContext: Context,
     private val fileChooserLauncher: ActivityResultLauncher<Intent>,
     private val debugLogging: Boolean,
 ) : WebChromeClient() {
@@ -33,11 +33,7 @@ internal class ShellWebChromeClient(
         message: String?,
         result: JsResult?,
     ): Boolean {
-        AlertDialog.Builder(activity)
-            .setMessage(message)
-            .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
-            .setOnCancelListener { result?.cancel() }
-            .show()
+        jsDialog(message, result).show()
         return true
     }
 
@@ -47,11 +43,8 @@ internal class ShellWebChromeClient(
         message: String?,
         result: JsResult?,
     ): Boolean {
-        AlertDialog.Builder(activity)
-            .setMessage(message)
-            .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+        jsDialog(message, result)
             .setNegativeButton(android.R.string.cancel) { _, _ -> result?.cancel() }
-            .setOnCancelListener { result?.cancel() }
             .show()
         return true
     }
@@ -83,4 +76,10 @@ internal class ShellWebChromeClient(
             false
         }
     }
+
+    private fun jsDialog(message: String?, result: JsResult?): AlertDialog.Builder =
+        AlertDialog.Builder(dialogContext)
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+            .setOnCancelListener { result?.cancel() }
 }

@@ -31,7 +31,8 @@ class DatabaseManagerInstrumentedTest {
                 optional TEXT
             )
             """.trimIndent(),
-            null
+            null,
+            "exec"
         )
     }
 
@@ -46,7 +47,8 @@ class DatabaseManagerInstrumentedTest {
         val insert = JSONObject(
             manager.query(
                 "INSERT INTO typed_values (label, whole, amount, visible, optional) VALUES (?, ?, ?, ?, ?)",
-                """["espresso", 42, 12.5, true, null]"""
+                """["espresso", 42, 12.5, true, null]""",
+                "insert"
             )
         )
         assertEquals(1, insert.getInt("changes"))
@@ -54,7 +56,8 @@ class DatabaseManagerInstrumentedTest {
         val rows = JSONArray(
             manager.query(
                 "SELECT label, whole, amount, visible, optional FROM typed_values WHERE optional IS ?",
-                "[null]"
+                "[null]",
+                "all"
             )
         )
         assertEquals(1, rows.length())
@@ -79,7 +82,8 @@ class DatabaseManagerInstrumentedTest {
                     typeof(?) AS null_type,
                     typeof(?) AS text_type
                 """.trimIndent(),
-                """[7, 3.25, false, null, "seven"]"""
+                """[7, 3.25, false, null, "seven"]""",
+                "all"
             )
         )
         val row = rows.getJSONObject(0)
@@ -131,11 +135,104 @@ class DatabaseManagerInstrumentedTest {
     }
 
     @Test
+    fun runReturnsChanges() {
+        manager.query(
+            "INSERT INTO typed_values (label, whole, amount, visible, optional) VALUES (?, ?, ?, ?, ?)",
+            """["a", 1, 1.0, false, null]""",
+            "insert"
+        )
+        val update = JSONObject(
+            manager.query(
+                "UPDATE typed_values SET amount = ? WHERE label = ?",
+                """[2.5, "a"]""",
+                "run"
+            )
+        )
+        assertEquals(1, update.getInt("changes"))
+        assertEquals(0, update.getLong("lastInsertRowid"))
+
+        val delete = JSONObject(
+            manager.query(
+                "DELETE FROM typed_values WHERE label = ?",
+                """["a"]""",
+                "run"
+            )
+        )
+        assertEquals(1, delete.getInt("changes"))
+    }
+
+    @Test
+    fun insertReturnsLastInsertRowid() {
+        val first = JSONObject(
+            manager.query(
+                "INSERT INTO typed_values (label) VALUES (?)",
+                """["one"]""",
+                "insert"
+            )
+        )
+        assertEquals(1, first.getInt("changes"))
+        assertEquals(1L, first.getLong("lastInsertRowid"))
+
+        val second = JSONObject(
+            manager.query(
+                "INSERT INTO typed_values (label) VALUES (?)",
+                """["two"]""",
+                "insert"
+            )
+        )
+        assertEquals(2L, second.getLong("lastInsertRowid"))
+    }
+
+    @Test
+    fun allHandlesCteMultilineAndReturning() {
+        val cte = JSONArray(
+            manager.query(
+                "WITH cte AS (SELECT 1 AS n) SELECT n FROM cte",
+                null,
+                "all"
+            )
+        )
+        assertEquals(1L, cte.getJSONObject(0).getLong("n"))
+
+        val multiline = JSONArray(
+            manager.query(
+                "SELECT\n1 AS n",
+                null,
+                "all"
+            )
+        )
+        assertEquals(1L, multiline.getJSONObject(0).getLong("n"))
+
+        val returning = JSONArray(
+            manager.query(
+                "INSERT INTO typed_values (label) VALUES (?) RETURNING id, label",
+                """["ret"]""",
+                "all"
+            )
+        )
+        assertEquals(1, returning.length())
+        assertEquals("ret", returning.getJSONObject(0).getString("label"))
+    }
+
+    @Test
+    fun execRunsDdlAndReturnsEmptyChanges() {
+        val create = JSONObject(manager.query("CREATE TABLE ddl_check (id INTEGER)", null, "exec"))
+        assertEquals(0, create.getInt("changes"))
+        manager.query("DROP TABLE ddl_check", null, "exec")
+    }
+
+    @Test
+    fun unknownModeReturnsErrorPayload() {
+        val error = JSONObject(manager.query("SELECT 1", null, "bogus")).getString("error")
+        assertTrue(error.contains("Unknown query mode"))
+    }
+
+    @Test
     fun unsupportedArrayOrObjectParamsReturnErrorPayload() {
-        val objectError = JSONObject(manager.query("SELECT ?", "[{}]")).getString("error")
+        val objectError = JSONObject(manager.query("SELECT ?", "[{}]", "all")).getString("error")
         assertTrue(objectError.contains("Unsupported SQL parameter type at index 0"))
 
-        val arrayError = JSONObject(manager.query("SELECT ?", "[[1]]")).getString("error")
+        val arrayError = JSONObject(manager.query("SELECT ?", "[[1]]", "all")).getString("error")
         assertTrue(arrayError.contains("Unsupported SQL parameter type at index 0"))
     }
 }

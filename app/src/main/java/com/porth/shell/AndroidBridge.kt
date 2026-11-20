@@ -22,7 +22,8 @@ class AndroidBridge(
     fun storageKeys(): String = storageManager.keys()
 
     @JavascriptInterface
-    fun dbQuery(sql: String, paramsJson: String?): String = databaseManager.query(sql, paramsJson)
+    fun dbQuery(sql: String, paramsJson: String?, mode: String): String =
+        databaseManager.query(sql, paramsJson, mode)
 
     @JavascriptInterface
     fun dbQueryRaw(sql: String, paramsJson: String?, method: String): String =

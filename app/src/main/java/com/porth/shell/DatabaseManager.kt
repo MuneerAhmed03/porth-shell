@@ -36,7 +36,7 @@ class DatabaseManager(context: Context) {
         return try {
             val params = parseParams(paramsJson)
             when (mode) {
-                "all" -> executeSelect(sql, params)
+                "all" -> executeRows(sql, params)
                 "run" -> executeUpdateDelete(sql, params)
                 "insert" -> executeInsert(sql, params)
                 "exec" -> executeStatement(sql, params)
@@ -66,7 +66,7 @@ class DatabaseManager(context: Context) {
         }
     }
 
-    private fun executeSelect(sql: String, params: List<SqlParam>): String {
+    private fun executeRows(sql: String, params: List<SqlParam>): String {
         queryWithTypedParams(helper.writableDatabase, sql, params).use { cursor ->
             val rows = JSONArray()
             while (cursor.moveToNext()) {
@@ -96,40 +96,34 @@ class DatabaseManager(context: Context) {
     }
 
     private fun executeRawRun(sql: String, params: List<SqlParam>): String {
-        val statement = helper.writableDatabase.compileStatement(sql)
-        try {
-            bindStatementParams(statement, params)
-            statement.execute()
-        } finally {
-            statement.close()
-        }
+        executeStatement(sql, params)
         return JSONObject().put("rows", JSONArray()).toString()
     }
 
-    private fun executeUpdateDelete(sql: String, params: List<SqlParam>): String {
-        val statement = helper.writableDatabase.compileStatement(sql)
-        try {
-            bindStatementParams(statement, params)
+    private fun executeUpdateDelete(sql: String, params: List<SqlParam>): String =
+        withStatement(sql, params) { statement ->
             val changes = statement.executeUpdateDelete()
-            return JSONObject()
+            JSONObject()
                 .put("changes", changes)
                 .put("lastInsertRowid", 0)
                 .toString()
-        } finally {
-            statement.close()
         }
-    }
 
-    private fun executeInsert(sql: String, params: List<SqlParam>): String {
-        val statement = helper.writableDatabase.compileStatement(sql)
-        try {
-            bindStatementParams(statement, params)
+    private fun executeInsert(sql: String, params: List<SqlParam>): String =
+        withStatement(sql, params) { statement ->
             val rowId = statement.executeInsert()
             val changes = if (rowId >= 0) 1 else 0
-            return JSONObject()
+            JSONObject()
                 .put("changes", changes)
                 .put("lastInsertRowid", if (rowId >= 0) rowId else 0)
                 .toString()
+        }
+
+    private fun <T> withStatement(sql: String, params: List<SqlParam>, block: (SQLiteStatement) -> T): T {
+        val statement = helper.writableDatabase.compileStatement(sql)
+        try {
+            bindStatementParams(statement, params)
+            return block(statement)
         } finally {
             statement.close()
         }

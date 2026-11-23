@@ -184,7 +184,7 @@ class DatabaseManagerInstrumentedTest {
     }
 
     @Test
-    fun allHandlesCteMultilineAndReturning() {
+    fun allHandlesCteReads() {
         val cte = JSONArray(
             manager.query(
                 "WITH cte AS (SELECT 1 AS n) SELECT n FROM cte",
@@ -193,7 +193,10 @@ class DatabaseManagerInstrumentedTest {
             )
         )
         assertEquals(1L, cte.getJSONObject(0).getLong("n"))
+    }
 
+    @Test
+    fun allHandlesMultilineSelect() {
         val multiline = JSONArray(
             manager.query(
                 "SELECT\n1 AS n",
@@ -202,7 +205,10 @@ class DatabaseManagerInstrumentedTest {
             )
         )
         assertEquals(1L, multiline.getJSONObject(0).getLong("n"))
+    }
 
+    @Test
+    fun allHandlesInsertReturning() {
         val returning = JSONArray(
             manager.query(
                 "INSERT INTO typed_values (label) VALUES (?) RETURNING id, label",
@@ -212,6 +218,43 @@ class DatabaseManagerInstrumentedTest {
         )
         assertEquals(1, returning.length())
         assertEquals("ret", returning.getJSONObject(0).getString("label"))
+    }
+
+    @Test
+    fun queryRawRunHandlesCteWriteAndDdl() {
+        manager.query(
+            "INSERT INTO typed_values (label, amount) VALUES (?, ?)",
+            """["cte-src", 1.0]""",
+            "insert"
+        )
+
+        manager.queryRaw(
+            """
+            WITH target AS (SELECT id FROM typed_values WHERE label = ?)
+            UPDATE typed_values SET amount = 9.9 WHERE id IN (SELECT id FROM target)
+            """.trimIndent(),
+            """["cte-src"]""",
+            "run"
+        )
+
+        val rows = JSONArray(
+            manager.query(
+                "SELECT amount FROM typed_values WHERE label = ?",
+                """["cte-src"]""",
+                "all"
+            )
+        )
+        assertEquals(9.9, rows.getJSONObject(0).getDouble("amount"), 0.0)
+
+        manager.queryRaw("CREATE TABLE raw_ddl_check (id INTEGER)", null, "run")
+        val check = JSONArray(
+            manager.query(
+                "SELECT name FROM sqlite_master WHERE name = 'raw_ddl_check'",
+                null,
+                "all"
+            )
+        )
+        assertEquals(1, check.length())
     }
 
     @Test

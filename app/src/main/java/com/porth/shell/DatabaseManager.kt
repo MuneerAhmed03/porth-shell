@@ -12,37 +12,6 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
-private enum class QueryMode(val bridgeValue: String) {
-    ALL("all"),
-    RUN("run"),
-    INSERT("insert"),
-    EXEC("exec");
-
-    companion object {
-        fun fromBridge(value: String): QueryMode =
-            entries.firstOrNull { it.bridgeValue == value }
-                ?: throw IllegalArgumentException("Unknown query mode: $value")
-    }
-}
-
-private enum class DrizzleMethod(val bridgeValue: String) {
-    RUN("run"),
-    ALL("all"),
-    VALUES("values"),
-    GET("get");
-
-    companion object {
-        fun fromBridge(value: String): DrizzleMethod =
-            entries.firstOrNull { it.bridgeValue == value }
-                ?: throw IllegalArgumentException("Unknown Drizzle method: $value")
-    }
-}
-
-private enum class DrizzleResultType {
-    MULTIPLE_ROWS,
-    FIRST_ROW,
-}
-
 class DatabaseManager(context: Context) {
     private sealed class SqlParam {
         data object NullValue : SqlParam()

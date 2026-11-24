@@ -12,6 +12,37 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
+private enum class QueryMode(val bridgeValue: String) {
+    ALL("all"),
+    RUN("run"),
+    INSERT("insert"),
+    EXEC("exec");
+
+    companion object {
+        fun fromBridge(value: String): QueryMode =
+            entries.firstOrNull { it.bridgeValue == value }
+                ?: throw IllegalArgumentException("Unknown query mode: $value")
+    }
+}
+
+private enum class DrizzleMethod(val bridgeValue: String) {
+    RUN("run"),
+    ALL("all"),
+    VALUES("values"),
+    GET("get");
+
+    companion object {
+        fun fromBridge(value: String): DrizzleMethod =
+            entries.firstOrNull { it.bridgeValue == value }
+                ?: throw IllegalArgumentException("Unknown Drizzle method: $value")
+    }
+}
+
+private enum class DrizzleResultType {
+    MULTIPLE_ROWS,
+    FIRST_ROW,
+}
+
 class DatabaseManager(context: Context) {
     private sealed class SqlParam {
         data object NullValue : SqlParam()
@@ -32,39 +63,37 @@ class DatabaseManager(context: Context) {
     }
 
     @Synchronized
-    fun query(sql: String, paramsJson: String?, mode: String): String {
-        return try {
+    fun query(sql: String, paramsJson: String?, mode: String): String =
+        executeResponse {
             val params = parseParams(paramsJson)
-            when (mode) {
-                "all" -> executeRows(sql, params)
-                "run" -> executeUpdateDelete(sql, params)
-                "insert" -> executeInsert(sql, params)
-                "exec" -> executeStatement(sql, params)
-                else -> throw IllegalArgumentException("Unknown query mode: $mode")
+            when (QueryMode.fromBridge(mode)) {
+                QueryMode.ALL -> executeRows(sql, params)
+                QueryMode.RUN -> executeUpdateDelete(sql, params)
+                QueryMode.INSERT -> executeInsert(sql, params)
+                QueryMode.EXEC -> executeExec(sql, params)
             }
-        } catch (e: Exception) {
-            JSONObject()
-                .put("error", e.message ?: "unknown error")
-                .toString()
         }
-    }
 
     @Synchronized
-    fun queryRaw(sql: String, paramsJson: String?, method: String): String {
-        return try {
+    fun queryRaw(sql: String, paramsJson: String?, method: String): String =
+        executeResponse {
             val params = parseParams(paramsJson)
-
-            if (method == "run") {
-                executeRawRun(sql, params)
-            } else {
-                executeRawRows(sql, params, method)
+            when (DrizzleMethod.fromBridge(method)) {
+                DrizzleMethod.RUN -> executeRawRun(sql, params)
+                DrizzleMethod.ALL, DrizzleMethod.VALUES ->
+                    executeRawRows(sql, params, DrizzleResultType.MULTIPLE_ROWS)
+                DrizzleMethod.GET -> executeRawRows(sql, params, DrizzleResultType.FIRST_ROW)
             }
+        }
+
+    private fun executeResponse(block: () -> String): String =
+        try {
+            block()
         } catch (e: Exception) {
             JSONObject()
                 .put("error", e.message ?: "unknown error")
                 .toString()
         }
-    }
 
     private fun executeRows(sql: String, params: List<SqlParam>): String {
         queryWithTypedParams(helper.writableDatabase, sql, params).use { cursor ->
@@ -81,28 +110,28 @@ class DatabaseManager(context: Context) {
         }
     }
 
-    private fun executeRawRows(sql: String, params: List<SqlParam>, method: String): String {
+    private fun executeRawRows(sql: String, params: List<SqlParam>, resultType: DrizzleResultType): String {
         queryWithTypedParams(helper.writableDatabase, sql, params).use { cursor ->
             val rows = JSONArray()
             while (cursor.moveToNext()) {
                 rows.put(cursorRow(cursor))
-                if (method == "get") {
+                if (resultType == DrizzleResultType.FIRST_ROW) {
                     break
                 }
             }
-            val payload = if (method == "get") rows.optJSONArray(0) ?: JSONArray() else rows
+            val payload = if (resultType == DrizzleResultType.FIRST_ROW) rows.optJSONArray(0) ?: JSONArray() else rows
             return JSONObject().put("rows", payload).toString()
         }
     }
 
     private fun executeRawRun(sql: String, params: List<SqlParam>): String {
-        executeStatement(sql, params)
+        executeExec(sql, params)
         return JSONObject().put("rows", JSONArray()).toString()
     }
 
     private fun executeUpdateDelete(sql: String, params: List<SqlParam>): String =
-        withStatement(sql, params) { statement ->
-            val changes = statement.executeUpdateDelete()
+        withStatement(sql, params) {
+            val changes = executeUpdateDelete()
             JSONObject()
                 .put("changes", changes)
                 .put("lastInsertRowid", 0)
@@ -110,8 +139,8 @@ class DatabaseManager(context: Context) {
         }
 
     private fun executeInsert(sql: String, params: List<SqlParam>): String =
-        withStatement(sql, params) { statement ->
-            val rowId = statement.executeInsert()
+        withStatement(sql, params) {
+            val rowId = executeInsert()
             val changes = if (rowId >= 0) 1 else 0
             JSONObject()
                 .put("changes", changes)
@@ -119,17 +148,16 @@ class DatabaseManager(context: Context) {
                 .toString()
         }
 
-    private fun <T> withStatement(sql: String, params: List<SqlParam>, block: (SQLiteStatement) -> T): T {
-        val statement = helper.writableDatabase.compileStatement(sql)
-        try {
-            bindStatementParams(statement, params)
-            return block(statement)
-        } finally {
-            statement.close()
-        }
+    private inline fun <T> withStatement(
+        sql: String,
+        params: List<SqlParam>,
+        block: SQLiteStatement.() -> T,
+    ): T = helper.writableDatabase.compileStatement(sql).use { statement ->
+        bindStatementParams(statement, params)
+        statement.block()
     }
 
-    private fun executeStatement(sql: String, params: List<SqlParam>): String {
+    private fun executeExec(sql: String, params: List<SqlParam>): String {
         if (params.isEmpty()) {
             helper.writableDatabase.execSQL(sql)
         } else {

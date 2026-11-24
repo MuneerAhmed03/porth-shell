@@ -221,7 +221,7 @@ class DatabaseManagerInstrumentedTest {
     }
 
     @Test
-    fun queryRawRunHandlesCteWriteAndDdl() {
+    fun queryRawRunHandlesCteWrite() {
         manager.query(
             "INSERT INTO typed_values (label, amount) VALUES (?, ?)",
             """["cte-src", 1.0]""",
@@ -245,7 +245,10 @@ class DatabaseManagerInstrumentedTest {
             )
         )
         assertEquals(9.9, rows.getJSONObject(0).getDouble("amount"), 0.0)
+    }
 
+    @Test
+    fun queryRawRunHandlesDdl() {
         manager.queryRaw("CREATE TABLE raw_ddl_check (id INTEGER)", null, "run")
         val check = JSONArray(
             manager.query(
@@ -268,6 +271,12 @@ class DatabaseManagerInstrumentedTest {
     fun unknownModeReturnsErrorPayload() {
         val error = JSONObject(manager.query("SELECT 1", null, "bogus")).getString("error")
         assertTrue(error.contains("Unknown query mode"))
+    }
+
+    @Test
+    fun unknownRawMethodReturnsErrorPayload() {
+        val error = JSONObject(manager.queryRaw("SELECT 1", null, "bogus")).getString("error")
+        assertTrue(error.contains("Unknown Drizzle method"))
     }
 
     @Test

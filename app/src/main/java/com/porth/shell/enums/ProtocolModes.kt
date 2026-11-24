@@ -1,4 +1,4 @@
-package com.porth.shell
+package com.porth.shell.enums
 
 internal enum class QueryMode(val bridgeValue: String) {
     ALL("all"),

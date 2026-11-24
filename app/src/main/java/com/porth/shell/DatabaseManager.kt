@@ -9,6 +9,9 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.database.sqlite.SQLiteQuery
 import android.database.sqlite.SQLiteStatement
 import android.util.Base64
+import com.porth.shell.enums.DrizzleMethod
+import com.porth.shell.enums.DrizzleResultType
+import com.porth.shell.enums.QueryMode
 import org.json.JSONArray
 import org.json.JSONObject
 

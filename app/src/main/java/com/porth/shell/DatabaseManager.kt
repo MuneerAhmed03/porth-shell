@@ -112,13 +112,19 @@ class DatabaseManager(context: Context) {
 
     private fun executeInsert(sql: String, params: List<SqlParam>): String =
         withStatement(sql, params) {
-            val rowId = executeInsert()
-            val changes = if (rowId >= 0) 1 else 0
+            val changes = executeUpdateDelete()
+            val rowId = if (changes > 0) queryLastInsertRowid() else 0
             JSONObject()
                 .put("changes", changes)
-                .put("lastInsertRowid", if (rowId >= 0) rowId else 0)
+                .put("lastInsertRowid", rowId)
                 .toString()
         }
+
+    private fun queryLastInsertRowid(): Long {
+        queryWithTypedParams(helper.writableDatabase, "SELECT last_insert_rowid()", emptyList()).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getLong(0) else 0
+        }
+    }
 
     private inline fun <T> withStatement(
         sql: String,

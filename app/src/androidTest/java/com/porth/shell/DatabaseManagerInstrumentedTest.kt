@@ -261,6 +261,33 @@ class DatabaseManagerInstrumentedTest {
     }
 
     @Test
+    fun insertCountsMultipleRows() {
+        val insert = JSONObject(
+            manager.query(
+                "INSERT INTO typed_values (label) VALUES (?), (?)",
+                """["m1", "m2"]""",
+                "insert"
+            )
+        )
+        assertEquals(2, insert.getInt("changes"))
+    }
+
+    @Test
+    fun insertIgnoreReturnsZeroChangesAndRowid() {
+        manager.query(
+            "CREATE TABLE uniq_check (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT UNIQUE)",
+            null,
+            "exec"
+        )
+        manager.query("INSERT INTO uniq_check (label) VALUES (?)", """["dup"]""", "insert")
+        val ignored = JSONObject(
+            manager.query("INSERT OR IGNORE INTO uniq_check (label) VALUES (?)", """["dup"]""", "insert")
+        )
+        assertEquals(0, ignored.getInt("changes"))
+        assertEquals(0, ignored.getLong("lastInsertRowid"))
+    }
+
+    @Test
     fun execRunsDdlAndReturnsEmptyChanges() {
         val create = JSONObject(manager.query("CREATE TABLE ddl_check (id INTEGER)", null, "exec"))
         assertEquals(0, create.getInt("changes"))

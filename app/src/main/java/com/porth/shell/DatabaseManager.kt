@@ -9,9 +9,11 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.database.sqlite.SQLiteQuery
 import android.database.sqlite.SQLiteStatement
 import android.util.Base64
+import com.porth.shell.enums.DrizzleMethod
+import com.porth.shell.enums.DrizzleResultType
+import com.porth.shell.enums.QueryMode
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Locale
 
 class DatabaseManager(context: Context) {
     private sealed class SqlParam {
@@ -33,42 +35,40 @@ class DatabaseManager(context: Context) {
     }
 
     @Synchronized
-    fun query(sql: String, paramsJson: String?): String {
-        return try {
+    fun query(sql: String, paramsJson: String?, mode: String): String =
+        executeResponse {
             val params = parseParams(paramsJson)
-            val statementType = sql.trim().substringBefore(" ", "").uppercase(Locale.US)
-
-            when (statementType) {
-                "SELECT" -> executeSelect(sql, params)
-                "INSERT", "UPDATE", "DELETE" -> executeWrite(sql, params, statementType)
-                else -> executeStatement(sql, params)
+            when (QueryMode.fromBridge(mode)) {
+                QueryMode.ALL -> executeRows(sql, params)
+                QueryMode.RUN -> executeUpdateDelete(sql, params)
+                QueryMode.INSERT -> executeInsert(sql, params)
+                QueryMode.EXEC -> executeExec(sql, params)
             }
-        } catch (e: Exception) {
-            JSONObject()
-                .put("error", e.message ?: "unknown error")
-                .toString()
         }
-    }
 
     @Synchronized
-    fun queryRaw(sql: String, paramsJson: String?, method: String): String {
-        return try {
+    fun queryRaw(sql: String, paramsJson: String?, method: String): String =
+        executeResponse {
             val params = parseParams(paramsJson)
-
-            if (method == "run") {
-                executeRawRun(sql, params)
-            } else {
-                executeRawRows(sql, params, method)
+            when (DrizzleMethod.fromBridge(method)) {
+                DrizzleMethod.RUN -> executeRawRun(sql, params)
+                DrizzleMethod.ALL, DrizzleMethod.VALUES ->
+                    executeRawRows(sql, params, DrizzleResultType.MULTIPLE_ROWS)
+                DrizzleMethod.GET -> executeRawRows(sql, params, DrizzleResultType.FIRST_ROW)
             }
+        }
+
+    private fun executeResponse(block: () -> String): String =
+        try {
+            block()
         } catch (e: Exception) {
             JSONObject()
                 .put("error", e.message ?: "unknown error")
                 .toString()
         }
-    }
 
-    private fun executeSelect(sql: String, params: List<SqlParam>): String {
-        queryWithTypedParams(helper.readableDatabase, sql, params).use { cursor ->
+    private fun executeRows(sql: String, params: List<SqlParam>): String {
+        queryWithTypedParams(helper.writableDatabase, sql, params).use { cursor ->
             val rows = JSONArray()
             while (cursor.moveToNext()) {
                 val row = JSONObject()
@@ -82,54 +82,60 @@ class DatabaseManager(context: Context) {
         }
     }
 
-    private fun executeRawRows(sql: String, params: List<SqlParam>, method: String): String {
+    private fun executeRawRows(sql: String, params: List<SqlParam>, resultType: DrizzleResultType): String {
         queryWithTypedParams(helper.writableDatabase, sql, params).use { cursor ->
             val rows = JSONArray()
             while (cursor.moveToNext()) {
                 rows.put(cursorRow(cursor))
-                if (method == "get") {
+                if (resultType == DrizzleResultType.FIRST_ROW) {
                     break
                 }
             }
-            val payload = if (method == "get") rows.optJSONArray(0) ?: JSONArray() else rows
+            val payload = if (resultType == DrizzleResultType.FIRST_ROW) rows.optJSONArray(0) ?: JSONArray() else rows
             return JSONObject().put("rows", payload).toString()
         }
     }
 
     private fun executeRawRun(sql: String, params: List<SqlParam>): String {
-        val statementType = sql.trim().substringBefore(" ", "").uppercase(Locale.US)
-        when (statementType) {
-            "INSERT", "UPDATE", "DELETE" -> executeWrite(sql, params, statementType)
-            else -> executeStatement(sql, params)
-        }
+        executeExec(sql, params)
         return JSONObject().put("rows", JSONArray()).toString()
     }
 
-    private fun executeWrite(sql: String, params: List<SqlParam>, statementType: String): String {
-        val db = helper.writableDatabase
-        val statement = db.compileStatement(sql)
-        try {
-            bindStatementParams(statement, params)
-            return if (statementType == "INSERT") {
-                val rowId = statement.executeInsert()
-                val changes = if (rowId >= 0) 1 else 0
-                JSONObject()
-                    .put("changes", changes)
-                    .put("lastInsertRowid", if (rowId >= 0) rowId else 0)
-                    .toString()
-            } else {
-                val changes = statement.executeUpdateDelete()
-                JSONObject()
-                    .put("changes", changes)
-                    .put("lastInsertRowid", 0)
-                    .toString()
-            }
-        } finally {
-            statement.close()
+    private fun executeUpdateDelete(sql: String, params: List<SqlParam>): String =
+        withStatement(sql, params) {
+            val changes = executeUpdateDelete()
+            JSONObject()
+                .put("changes", changes)
+                .put("lastInsertRowid", 0)
+                .toString()
+        }
+
+    private fun executeInsert(sql: String, params: List<SqlParam>): String =
+        withStatement(sql, params) {
+            val changes = executeUpdateDelete()
+            val rowId = if (changes > 0) queryLastInsertRowid() else 0
+            JSONObject()
+                .put("changes", changes)
+                .put("lastInsertRowid", rowId)
+                .toString()
+        }
+
+    private fun queryLastInsertRowid(): Long {
+        queryWithTypedParams(helper.writableDatabase, "SELECT last_insert_rowid()", emptyList()).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getLong(0) else 0
         }
     }
 
-    private fun executeStatement(sql: String, params: List<SqlParam>): String {
+    private inline fun <T> withStatement(
+        sql: String,
+        params: List<SqlParam>,
+        block: SQLiteStatement.() -> T,
+    ): T = helper.writableDatabase.compileStatement(sql).use { statement ->
+        bindStatementParams(statement, params)
+        statement.block()
+    }
+
+    private fun executeExec(sql: String, params: List<SqlParam>): String {
         if (params.isEmpty()) {
             helper.writableDatabase.execSQL(sql)
         } else {
